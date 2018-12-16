@@ -1,0 +1,1068 @@
+---
+title: "PalantirDec6"
+author: "Palantir"
+date: "12/6/2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(ggplot2)
+library(tidyverse)
+library(readr)
+library(ggpubr)
+# Read data, delete repeated columns and format date
+# 200,000 jobs
+data <- read.csv('Manu_data_200000.csv')
+drops <- c("job_id.1","job_id.2")
+df <- data[, !(names(data) %in% drops)]
+df$post_date <- as.character(df$post_date)
+
+df$post_date <- as.Date(df[["post_date"]], "%m/%d/%Y")
+df$fill_date <- as.Date(df[["fill_date"]], "%m/%d/%Y")
+```
+
+
+
+# Add Combined Statistical Areas to 11 top markets
+# 2017 Estimates from Wikipedia
+# NY, LA, CHI, DC, SF, DAL, BOS, ATL, DET, PHI, SJ
+
+# df$csa <- ifelse(df$region_state=="New York-Northern New Jersey-Long Island, NY-NJ-PA MSA", 23876155, 
+#                  ifelse(df$region_state=="Los Angeles-Long Beach-Santa Ana, CA MSA", 18788800,
+#                  ifelse(df$region_state=="Chicago-Naperville-Joliet, IL-IN-WI MSA", 9901711, 
+#                 ifelse(df$region_state=="Washington-Arlington-Alexandria, DC-VA-MD-WV MSA", 9764315, 
+#                 ifelse(df$region_state=="San Francisco-Oakland-Fremont, CA MSA", 4727357, 
+#                 ifelse(df$region_state=="Dallas-Fort Worth-Arlington, TX MSA", 7846293,
+#                 ifelse(df$region_state=="Boston-Cambridge-Quincy, MA-NH MSA", 8233270, 
+#                 ifelse(df$region_state=="Atlanta-Sandy Springs-Marietta, GA MSA", 6555956, 
+#                 ifelse(df$region_state=="Detroit-Warren-Livonia, MI MSA", 5336286,
+#                 ifelse(df$region_state=="Philadelphia-Camden-Wilmington, PA-NJ-DE-MD MSA", 7206807,
+#                 ifelse(df$region_state=="San Jose-Sunnyvale-Santa Clara, CA MSA", 1998463,NA)))))))))))
+
+```{r}
+# Aggregate Engineer and Driver jobs
+# All Engineers combined (Electrical, Mechanical)
+# All Drivers combined (Truck, CDL, etc)
+index1 <- grep('Engineer', df$role, perl=TRUE)
+df$role[index1] <- 'Engineer'
+index2 <- grep('Driver', df$role, perl=TRUE)
+df$role[index2] <- 'Driver'
+
+# 181,608 jobs
+# Delete jobs with time_to_fill under 2 or over 123 days
+# Why? Fill time too short, might just be internal posting request
+# Why? Forgotten about postings
+df <- df[df$time_to_fill>2 & df$time_to_fill<123, ]
+
+# Format month year
+df$Month_Yr <- format(as.Date(df$post_date), "%Y-%m")
+```
+
+# Calculate job posting of selected roles and plot
+```{r}
+
+# group and count job id by month for Engineer and Driver
+cbm <- aggregate(cbind(count = job_id) ~ Month_Yr+role, 
+          data = df[df$role=='Engineer' | df$role=='Driver',], 
+          FUN = function(x){NROW(x)})
+
+# plot over time for all regions
+ggplot(data = cbm, aes(x = factor(Month_Yr), y = count, color = role)) +   
+  geom_line(aes(group = role)) + geom_point() +
+  xlab('Year-Month') +
+  ylab('Count') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title="Monthly Job Postings (Nationwide, Manufacturing Vertical)")
+
+```
+
+# Calculate job posting of selected roles and plot
+# August 2017 - July 2018
+```{r}
+
+# group and count job id by month for Engineer and Driver
+cbm <- cbm[cbm$Month_Yr > "2017-07", ]
+
+# plot over time for all regions
+ggplot(data = cbm, aes(x = factor(Month_Yr), y = count, color = role)) +   
+  geom_line(aes(group = role)) + geom_point() +
+  xlab('Year-Month') +
+  ylab('Count') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title="Monthly Job Postings, 8/2017 to 7/2018 (Nationwide, Manufacturing Vertical)")
+
+```
+
+##### 
+# From this point forward, one dataset
+# All dates 8/2017 to 7/2018 only
+# Removed jobs with time_to_fill 0,1,2 or more than 123 days
+
+
+```{r}
+data_full <- read.csv('Manu_data_200000.csv')
+data_full<-data_full[,-c(1,17,19)]
+# 200,000 observations
+
+data_full$post_date <- as.character(data_full$post_date)
+data_full$fill_date <- as.character(data_full$fill_date)
+data_full$post_date <- as.Date(data_full[["post_date"]], "%m/%d/%Y")
+data_full$fill_date <- as.Date(data_full[["fill_date"]], "%m/%d/%Y")
+data_full$Month_Yr <- format(as.Date(data_full$post_date), "%Y-%m")
+
+# Remove time_to_fill outliers
+data_full <- data_full[data_full$time_to_fill>2 & data_full$time_to_fill<123, ]
+# 181,608 observations
+
+# Remove jobs prior to August 2017
+data_full <- data_full[data_full$Month_Yr > "2017-07", ]
+# 177,231 observations
+
+str(data_full)
+```
+
+```{r}
+summary(data_full) 
+```
+
+```{r}
+# time to fill distribution
+summary(data_full$time_to_fill)
+
+```
+
+```{r}
+# salary distribution
+summary(data_full$salary)
+```
+
+```{r}
+# Remove rows with time_to_fill = NA (4477 / 200000 ~ 2.24%)
+data_full <- data_full %>% drop_na(time_to_fill)
+# 172,754 observations
+```
+
+```{r}
+length(unique(data_full$job_id))
+# 172,754 observations
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+# time series analysis
+# calculate and plot ratio of job count
+```{r}
+
+# total job count by month_year
+total_job <- aggregate(cbind(count = job_id) ~ Month_Yr, 
+          data = df, 
+          FUN = function(x){NROW(x)})
+
+# job count by month_year of engineer and driver
+cbm <- aggregate(cbind(count = job_id) ~ Month_Yr+role, 
+          data = df[which(df$role=='Engineer'|df$role=='Driver'),], 
+          FUN = function(x){NROW(x)})
+
+# get ratio of job counts (rescale)
+cbm <- merge(cbm, total_job, by = 'Month_Yr', all = TRUE)
+cbm$ratio <- cbm$count.x / cbm$count.y
+cbm <- cbm[cbm$Month_Yr > "2017-07", ]
+
+# plot over time for all regions
+# both driver and engineer
+ggplot(data = cbm, aes(x = factor(Month_Yr), y = ratio, color= role)) +
+  geom_line(aes(group=role)) + geom_point() +
+  xlab('Year-Month') +
+  ylab('Ratio of Job Posting') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title="Proportion of Manufacturing Vertical, 8/2017 to 7/2018 (Nationwide)")
+```
+
+# ```{r}
+# # plot ratio for engineer
+# ggplot(data = cbm[cbm$role=='Engineer',], aes(x = factor(Month_Yr), y = ratio, color~role)) +
+# geom_line(aes(group=role)) + geom_point() + 
+#   ggtitle('Engineer Jobs as a Proportion of All Manufacturing Jobs') +
+#   xlab('Year-Month') +
+#   ylab('Ratio of Job Posting') +
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1))
+# ```
+```{r}
+
+# total job count by month_year
+total_job_sj <- aggregate(cbind(count = job_id) ~ Month_Yr, 
+          data = df[df$region_state=="San Jose-Sunnyvale-Santa Clara, CA MSA", ], 
+          FUN = function(x){NROW(x)})
+
+total_job_sf <- aggregate(cbind(count = job_id) ~ Month_Yr, 
+          data = df[df$region_state=="San Francisco-Oakland-Fremont, CA MSA", ], 
+          FUN = function(x){NROW(x)})
+
+# job count by month_year of engineer
+cbm_sj <- aggregate(cbind(count = job_id) ~ Month_Yr+role, 
+          data = df[which(df$role=='Engineer' & df$region_state=="San Jose-Sunnyvale-Santa Clara, CA MSA"),], 
+          FUN = function(x){NROW(x)})
+
+cbm_sf <- aggregate(cbind(count = job_id) ~ Month_Yr+role, 
+          data = df[which(df$role=='Engineer' & df$region_state=="San Francisco-Oakland-Fremont, CA MSA"),], 
+          FUN = function(x){NROW(x)})
+
+# get ratio of job counts (rescale)
+cbm_sj <- merge(cbm_sj, total_job_sj, by = 'Month_Yr', all = TRUE)
+cbm_sj$ratio <- cbm_sj$count.x / cbm_sj$count.y
+cbm_sj <- cbm_sj[cbm_sj$Month_Yr > "2017-07", ]
+cbm_sj$region = "San Jose"
+
+cbm_sf <- merge(cbm_sf, total_job_sf, by = 'Month_Yr', all = TRUE)
+cbm_sf$ratio <- cbm_sf$count.x / cbm_sf$count.y
+cbm_sf <- cbm_sf[cbm_sf$Month_Yr > "2017-07", ]
+cbm_sf$region = "San Francisco"
+
+cbm <- rbind(cbm_sj, cbm_sf)
+# plot over time for all regions
+# both driver and engineer
+
+
+ggplot(data=cbm, aes(x = factor(Month_Yr), y = ratio, color=region)) +
+  geom_line(aes(group=region)) + geom_point() +
+  xlab('Year-Month') +
+  ylab('Ratio of Job Posting') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title="Engineering Proportion of Manufacturing Vertical, 8/2017 to 7/2018")
+```
+
+```{r}
+
+# total job count by month_year
+total_job_det <- aggregate(cbind(count = job_id) ~ Month_Yr, 
+          data = df[df$region_state=="Detroit-Warren-Livonia, MI MSA", ], 
+          FUN = function(x){NROW(x)})
+
+total_job_chi <- aggregate(cbind(count = job_id) ~ Month_Yr, 
+          data = df[df$region_state=="Chicago-Naperville-Joliet, IL-IN-WI MSA", ], 
+          FUN = function(x){NROW(x)})
+
+total_job_atl <- aggregate(cbind(count = job_id) ~ Month_Yr, 
+          data = df[df$region_state=="Atlanta-Sandy Springs-Marietta, GA MSA", ], 
+          FUN = function(x){NROW(x)})
+
+total_job_phi <- aggregate(cbind(count = job_id) ~ Month_Yr, 
+          data = df[df$region_state=="Philadelphia-Camden-Wilmington, PA-NJ-DE-MD MSA", ], 
+          FUN = function(x){NROW(x)})
+
+# job count by month_year of engineer
+cbm_det <- aggregate(cbind(count = job_id) ~ Month_Yr+role, 
+          data = df[which(df$role=='Driver' & df$region_state=="Detroit-Warren-Livonia, MI MSA"),], 
+          FUN = function(x){NROW(x)})
+
+cbm_chi <- aggregate(cbind(count = job_id) ~ Month_Yr+role, 
+          data = df[which(df$role=='Driver' & df$region_state=="Chicago-Naperville-Joliet, IL-IN-WI MSA"),], 
+          FUN = function(x){NROW(x)})
+
+cbm_atl <- aggregate(cbind(count = job_id) ~ Month_Yr+role, 
+          data = df[which(df$role=='Driver' & df$region_state=="Atlanta-Sandy Springs-Marietta, GA MSA"),], 
+          FUN = function(x){NROW(x)})
+
+cbm_phi <- aggregate(cbind(count = job_id) ~ Month_Yr+role, 
+          data = df[which(df$role=='Driver' & df$region_state=="Philadelphia-Camden-Wilmington, PA-NJ-DE-MD MSA"),], 
+          FUN = function(x){NROW(x)})
+
+# get ratio of job counts (rescale)
+cbm_det <- merge(cbm_det, total_job_det, by = 'Month_Yr', all = TRUE)
+cbm_det$ratio <- cbm_det$count.x / cbm_det$count.y
+cbm_det <- cbm_det[cbm_det$Month_Yr > "2017-07", ]
+cbm_det$region = "Detroit"
+
+cbm_chi <- merge(cbm_chi, total_job_chi, by = 'Month_Yr', all = TRUE)
+cbm_chi$ratio <- cbm_chi$count.x / cbm_chi$count.y
+cbm_chi <- cbm_chi[cbm_chi$Month_Yr > "2017-07", ]
+cbm_chi$region = "Chicago"
+
+cbm_atl <- merge(cbm_atl, total_job_atl, by = 'Month_Yr', all = TRUE)
+cbm_atl$ratio <- cbm_atl$count.x / cbm_atl$count.y
+cbm_atl <- cbm_atl[cbm_atl$Month_Yr > "2017-07", ]
+cbm_atl$region = "Atlanta"
+
+cbm_phi <- merge(cbm_phi, total_job_phi, by = 'Month_Yr', all = TRUE)
+cbm_phi$ratio <- cbm_phi$count.x / cbm_phi$count.y
+cbm_phi <- cbm_phi[cbm_phi$Month_Yr > "2017-07", ]
+cbm_phi$region = "Philly"
+
+cbm <- rbind(cbm_det, cbm_chi, cbm_atl, cbm_phi)
+# plot over time for all regions
+# both driver and engineer
+
+
+ggplot(data=cbm, aes(x = factor(Month_Yr), y = ratio, color=region)) +
+  geom_line(aes(group=region)) + geom_point() +
+  xlab('Year-Month') +
+  ylab('Ratio of Job Posting') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(title="Driving Proportion of Manufacturing Vertical, 8/2017 to 7/2018")
+```
+
+
+# ```{r}
+# # plot ratio for driver
+# ggplot(data = cbm[cbm$role=='Driver',], aes(x = factor(Month_Yr), y = ratio, color~role)) +
+#   geom_line(aes(group=role)) + geom_point() +
+#   ggtitle('Driver') + 
+#   xlab('Year-Month') +
+#   ylab('Ratio of Job Posting') + 
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1))
+# ```
+
+# cross market analysis
+# ratio of Engineer by region_state (same code for driver: replacing Engineer with Driver)
+```{r}
+
+# total job count by month_year and region_state
+total_job_state <- aggregate(cbind(count = job_id) ~ Month_Yr+region_state, 
+          data = df, 
+          FUN = function(x){NROW(x)})
+total_job_state <- total_job_state[total_job_state$Month_Yr > "2017-07", ]
+
+# job count by month_year and region state of engineer
+cbm_state <- aggregate(cbind(count = job_id) ~ Month_Yr+region_state, 
+          data = df[which(df$role=='Engineer'),], 
+          FUN = function(x){NROW(x)})
+cbm_state <- cbm_state[cbm_state$Month_Yr > "2017-07", ]
+
+# get ratio of job counts (rescale)
+cbm_state <- merge(cbm_state, total_job_state, by = c('Month_Yr', 'region_state'), all = TRUE)
+cbm_state[is.na(cbm_state)] <- 0
+cbm_state$ratio <- cbm_state$count.x / cbm_state$count.y
+
+# find top 5 regions having largest job count of engineer
+cbs_e <- aggregate(cbind(count = job_id) ~ region_state,
+                 data = df[df$role=='Engineer',],
+                 FUN = function(x){NROW(x)})
+cbs_e <- cbs_e[order(-cbs_e$count), c(1,2)]
+top <- head(cbs_e[, 1],5)
+#print(head(cbs_e,10))
+
+# find data on top5 region 
+cbm_state_top <- cbm_state[is.element(cbm_state$region_state, top),]
+cbm_state_top <- cbm_state_top[cbm_state_top$Month_Yr > "2017-07", ]
+
+# plot ratio of time by state
+ggplot(data = cbm_state_top, aes(x = factor(Month_Yr), y = ratio, color = region_state)) +   
+  geom_line(aes(group = region_state)) + geom_point() +
+  ggtitle('Engineer Job Postings, Top Five Metro Regions') +
+  xlab('Year-Month') +
+  ylab('Ratio of Job Posting') +
+  theme(legend.position='right', 
+        legend.text=element_text(size=5),
+        axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r}
+
+# total job count by month_year and region_state
+total_job_state <- aggregate(cbind(count = job_id) ~ Month_Yr+region_state, 
+          data = df, 
+          FUN = function(x){NROW(x)})
+total_job_state <- total_job_state[total_job_state$Month_Yr > "2017-07", ]
+
+# job count by month_year and region state of driver
+cbm_state <- aggregate(cbind(count = job_id) ~ Month_Yr+region_state, 
+          data = df[which(df$role=='Driver'),], 
+          FUN = function(x){NROW(x)})
+cbm_state <- cbm_state[cbm_state$Month_Yr > "2017-07", ]
+
+# get ratio of job counts (rescale)
+cbm_state <- merge(cbm_state, total_job_state, by = c('Month_Yr', 'region_state'), all = TRUE)
+cbm_state[is.na(cbm_state)] <- 0
+cbm_state$ratio <- cbm_state$count.x / cbm_state$count.y
+
+# find top 5 regions having largest job count of engineer
+cbs_e <- aggregate(cbind(count = job_id) ~ region_state,
+                 data = df[df$role=='Driver',],
+                 FUN = function(x){NROW(x)})
+cbs_e <- cbs_e[order(-cbs_e$count), c(1,2)]
+top <- head(cbs_e[, 1],5)
+#print(head(cbs_e,10))
+
+# find data on top5 region 
+cbm_state_top <- cbm_state[is.element(cbm_state$region_state, top),]
+cbm_state_top <- cbm_state_top[cbm_state_top$Month_Yr > "2017-07", ]
+
+# plot ratio of time by state
+ggplot(data = cbm_state_top, aes(x = factor(Month_Yr), y = ratio, color = region_state)) +   
+  geom_line(aes(group = region_state)) + geom_point() +
+  ggtitle('Driver Job Postings, Top Five Metro Regions') +
+  xlab('Year-Month') +
+  ylab('Ratio of Job Posting') +
+  theme(legend.position='right', 
+        legend.text=element_text(size=5),
+        axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+```
+
+
+
+
+
+
+
+# # #treat NA, tof and salary are minor numbers, removed. Mainly impute for State
+# data_full <- data_full[!is.na(data_full$salary) & !is.na(data_full$time_to_fill),] 
+# library(mice)
+# library(VIM)
+# mice_plot <- aggr(data_full, col=c('navyblue','yellow'),
+#                   numbers=TRUE, sortVars=TRUE,
+#                   labels=names(data_full), cex.axis=.7,
+#                   gap=3, ylab=c("Missing data","Pattern"))
+# temp <- data_full[,c('post_date','fill_date','time_to_fill','salary','role','state')]
+# temp$state <- as.factor(temp$state)
+# tempData <- mice(temp,m=5,maxit=50,meth='pmm',seed=123)
+# summary(tempData)
+
+# tempData$imp$state
+
+
+# ```{r}
+# # plot trend
+# tmp <- data_full %>% mutate('mydate' = format(as.Date(post_date),'%Y-%m'))%>% 
+#   group_by(mydate) %>% summarise(num = n())
+# for(ii in 1:nrow(tmp)){
+#   tmp$mydate[ii] <- paste(tmp$mydate[ii],'-01',sep = '')
+# }
+# tmp$mydate <- as.Date(tmp$mydate,'%Y-%m-%d')
+# ggplot(data = tmp, aes(x = mydate, y = num)) + geom_line() # It appears that after 2017-07 the number of jobs exploded
+# ```
+
+
+
+
+
+
+```{r}
+# check if engineers pay and time to fill differ in groups
+unique_engineer <- unique(data_full$role)[grep('Engineer',unique(data_full$role))]
+all_engineers <- data_full[data_full$role %in% unique_engineer,]
+sum_engineer <- all_engineers %>% 
+  group_by(role) %>% 
+  summarise(num = n(), 
+  min_sal = min(salary,na.rm = T),
+  mean_sal = mean(salary,na.rm = T), 
+  median_sal = median(salary,na.rm = T),
+  max_sal = max(salary,na.rm = T), 
+  std_val = sd(salary,na.rm = T),
+  min_fill = min(time_to_fill,na.rm = T),
+  mean_fill = mean(time_to_fill,na.rm = T), 
+  median_fill = median(time_to_fill,na.rm = T),
+  max_fill = max(time_to_fill,na.rm = T), 
+  std_fill = sd(time_to_fill,na.rm = T)) %>% 
+  arrange(desc(num))
+```
+
+```{r}
+### For presentation (Joe)
+
+all_engineers1 <- data_full[data_full$role %in% unique_engineer,]
+sum_engineer1 <- all_engineers1 %>% group_by(role) %>% summarise(
+  num = n(), 
+  median_sal = median(salary,na.rm = T),
+  median_fill = median(time_to_fill,na.rm = T),
+  std_fill = sd(time_to_fill,na.rm = T)) %>% 
+  arrange(desc(num))
+
+```
+
+
+```{r}
+## Boxplot for salary, all types of engineers
+
+ggboxplot(all_engineers, x = "role", y = "salary", fill = 'role',
+          palette = 'magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+```{r}
+# trend of the ten groups salary
+ggline(all_engineers, x = "role", y = "salary", color = "role",
+       add = c("mean_se",'violin'),
+       palette ='magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+
+```{r}
+# Filter out the extreme groups and values
+eng.large.role <- sum_engineer$role[sum_engineer$num>(nrow(all_engineers)*0.01)] 
+eng.large.role
+```
+
+
+
+```{r}
+all_engineers.filterd <- all_engineers[all_engineers$role %in% eng.large.role, ]
+summary(all_engineers.filterd$salary)
+length(all_engineers.filterd$salary)
+```
+
+```{r}
+summary(all_engineers.filterd$time_to_fill)
+length(all_engineers.filterd$time_to_fill)
+
+```
+
+```{r}
+## get the 80% tiles of salary
+eng.tiles <- ntile(all_engineers.filterd$salary,10)
+```
+
+
+```{r}
+all_engineers.filterd <- all_engineers.filterd[eng.tiles>=2 & eng.tiles <=8,]
+table(all_engineers.filterd$role) %>% sort(decreasing = T)
+```
+
+```{r}
+ggboxplot(all_engineers.filterd, x = "role", y = "salary", fill = 'role',
+          palette = 'magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+```{r}
+# trend of the ten groups salary
+ggline(all_engineers.filterd, x = "role", y = "salary", color = "role",
+       add = c("mean_se",'violin'),
+       palette ='magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+```{r}
+# boxplots of ten groups time to fill
+ggboxplot(all_engineers, x = "role", y = "time_to_fill", fill = 'role',
+          palette = 'magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+
+```{r}
+# trend of the ten groups salary
+ggline(all_engineers, x = "role", y = "time_to_fill", color = "role",
+       add = c("mean_se",'violin'),
+       palette ='magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+```{r}
+# Filter out the extreme groups and values
+eng.large.role <- sum_engineer$role[sum_engineer$num>(nrow(all_engineers)*0.01)] 
+all_engineers.filterd <- all_engineers[all_engineers$role %in% eng.large.role, ]
+summary(all_engineers.filterd$time_to_fill)
+```
+```{r}
+## get the 80% tiles of salary
+eng.tiles <- ntile(all_engineers.filterd$time_to_fill,10)
+all_engineers.filterd <- all_engineers.filterd[eng.tiles>=2 & eng.tiles <=9,]
+table(all_engineers.filterd$role) %>% sort(decreasing = T)
+```
+```{r}
+## plot again
+ggboxplot(all_engineers.filterd, x = "role", y = "time_to_fill", fill = 'role',
+          palette = 'magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+```{r}
+# trend of the ten groups
+ggline(all_engineers.filterd, x = "role", y = "time_to_fill", color = "role",
+       add = c("mean_se",'violin'),
+       palette ='magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7)) # distribution looked similar
+```
+```{r}
+## check if all engineering/drivers role following similar skill distribution and total count
+# get data frame contains each role and its top 5 tags
+eng.tags <- data_full %>% 
+  filter(role %in% unique_engineer) %>% 
+  separate_rows(.,tags,sep = ',') %>% 
+  filter(!is.na(tags) & tags != '') %>% 
+  group_by(role,tags) %>% 
+  summarise(num = n()) %>% 
+  top_n(10,num) %>% 
+  arrange(role,desc(num)) %>% ungroup()
+
+sort(table(eng.tags$tags),decreasing = T)
+```
+
+```{r}
+eng.tags.max.num <- eng.tags %>% 
+  group_by(role) %>% 
+  summarise(max_num = max(num)) 
+eng.tags.max.num <- eng.tags.max.num[eng.tags.max.num$max_num > 100,]
+eng.tags <- inner_join(eng.tags,eng.tags.max.num, by = 'role')
+eng.tags$perc <- eng.tags$num/eng.tags$max_num
+```
+
+```{r}
+# reshape it to calculate similarity
+library(reshape2)
+wide.eng.tags <- dcast(eng.tags,role~tags,value.var = 'perc' )
+wide.eng.tags[is.na(wide.eng.tags)] <- 0
+```
+
+```{r}
+# quick clustering
+library(stylo)
+d <- dist(wide.eng.tags,method = 'euclidean') # distance matrix
+d # distance similar, safe to combine engineers together
+
+```
+
+
+```{r}
+## DRIVERS
+unique_drivers <- unique(data_full$role)[grep('Driver',unique(data_full$role))]
+all_drivers <- data_full[data_full$role %in% unique_drivers,]
+sum_drivers <- all_drivers %>% group_by(role) %>% summarise(
+  num = n(),  
+  min_sal = min(salary,na.rm = T),
+  mean_sal = mean(salary,na.rm = T), 
+  median_sal = median(salary,na.rm = T),
+  max_sal = max(salary,na.rm = T), 
+  std_val = sd(salary,na.rm = T),
+  min_fill = min(time_to_fill,na.rm = T),
+  mean_fill = mean(time_to_fill,na.rm = T), 
+  median_fill = median(time_to_fill,na.rm = T),
+  max_fill = max(time_to_fill,na.rm = T), 
+  std_fill = sd(time_to_fill,na.rm = T)) %>% 
+  arrange(desc(num))
+```
+
+```{r}
+### For presentation (Joe)
+
+all_drivers1 <- data_full[data_full$role %in% unique_drivers,]
+sum_drivers1 <- all_drivers1 %>% group_by(role) %>% summarise(
+  num = n(),  
+  median_sal = median(salary,na.rm = T),
+  median_fill = median(time_to_fill,na.rm = T),
+  std_fill = sd(time_to_fill,na.rm = T)) %>% 
+  arrange(desc(num))
+
+```
+
+
+```{r}
+## Boxplot for this
+# boxplots of ten groups salary
+library(ggpubr)
+ggboxplot(all_drivers, x = "role", y = "salary", fill = 'role',
+          palette = 'magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+```{r}
+# trend of the ten groups salary
+ggline(all_drivers, x = "role", y = "salary", color = "role",
+       add = c("mean_se",'violin'),
+       palette ='magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+```{r}
+# Filter out the extreme groups and values
+dri.large.role <- sum_drivers$role[sum_drivers$num>(nrow(all_drivers)*0.01)] 
+all_drivers.filterd <- all_drivers[all_drivers$role %in% dri.large.role, ]
+summary(all_drivers.filterd$salary)
+length(all_drivers.filterd$salary)
+```
+
+
+```{r}
+## get the 80% tiles of salary
+dri.tiles <- ntile(all_drivers.filterd$salary,10)
+all_drivers.filterd <- all_drivers.filterd[dri.tiles>=2 & dri.tiles <=9,]
+table(all_drivers.filterd$role) %>% sort(decreasing = T)
+```
+
+```{r}
+ggboxplot(all_drivers.filterd, x = "role", y = "salary", fill = 'role',
+          palette = 'magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+```{r}
+# trend of the ten groups salary
+ggline(all_drivers.filterd, x = "role", y = "salary", color = "role", 
+       add = c("mean_se",'violin'),
+       palette ='magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+```{r}
+# boxplots of ten groups time to fill
+ggboxplot(all_drivers, x = "role", y = "time_to_fill", fill = 'role',
+          palette = 'magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+```{r}
+# trend of the ten groups salary
+ggline(all_drivers, x = "role", y = "time_to_fill", color = "role",
+       add = c("mean_se",'violin'),
+       palette ='magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+```{r}
+# Filter out the extreme groups and values
+dri.large.role <- sum_drivers$role[sum_drivers$num>(nrow(all_drivers)*0.01)] 
+all_drivers.filterd <- all_drivers[all_drivers$role %in% dri.large.role, ]
+summary(all_drivers.filterd$time_to_fill)
+```
+
+```{r}
+## get the 80% tiles of salary
+dri.tiles <- ntile(all_drivers.filterd$time_to_fill,10)
+all_drivers.filterd <- all_drivers.filterd[dri.tiles>=2 & dri.tiles <=8,]
+table(all_drivers.filterd$role) %>% sort(decreasing = T)
+```
+
+```{r}
+## plot again
+ggboxplot(all_drivers.filterd, x = "role", y = "time_to_fill", fill = 'role',
+          palette = 'magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7))
+```
+
+```{r}
+# trend of the ten groups
+ggline(all_drivers.filterd, x = "role", y = "time_to_fill", color = "role",
+       add = c("mean_se",'violin'),
+       palette ='magma')+theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7)) 
+# distribution looked similar
+```
+
+```{r}
+## check if all enginnering/drivers role following similar skill distribution and total count
+# get data frame contains each role and its top 5 tags
+dri.tags <- data_full %>% filter(role %in% unique_drivers) %>% 
+  separate_rows(.,tags,sep = ',') %>% filter(!is.na(tags) & tags != '') %>% 
+  group_by(role,tags) %>% summarise(num = n()) %>% top_n(10,num) %>% 
+  arrange(role,desc(num)) %>% ungroup()
+sort(table(dri.tags$tags),decreasing = T)
+```
+
+```{r}
+dri.tags.max.num <- dri.tags %>% group_by(role) %>% summarise(max_num = max(num)) 
+dri.tags.max.num <- dri.tags.max.num[dri.tags.max.num$max_num > 100,]
+dri.tags <- inner_join(dri.tags,dri.tags.max.num, by = 'role')
+dri.tags$perc <- dri.tags$num/dri.tags$max_num
+```
+
+```{r}
+# reshape it to calculate similarity
+wide.dri.tags <- dcast(dri.tags,role~tags,value.var = 'perc' )
+wide.dri.tags[is.na(wide.dri.tags)] <- 0
+# quick clustering
+d <- dist(wide.dri.tags,method = 'euclidean') # distance matrix
+d # distance similar, safe to combine drivers together
+```
+
+```{r}
+#combine roles 
+unique_engineer <- unique_engineer[unique_engineer!= 'Engineer']
+unique_drivers <- unique_drivers[unique_drivers!= 'Driver']
+data_full$role[data_full$role %in% unique_engineer] <- 'Engineer'
+data_full$role[data_full$role %in% unique_drivers] <- 'Driver'
+```
+
+
+```{r}
+#Engineering/driver job demand trend (number of engineer/driver job over total jobs that month)
+tmp <- data_full %>% 
+  mutate('mydate' = format(as.Date(post_date),'%Y-%m')) %>% 
+  group_by(mydate,role) %>% 
+  summarise(num = n())
+
+x <- (tmp %>% filter(role %in% c('Engineer','Driver')) %>% 
+        group_by(mydate,role)%>%
+        summarise(num = sum(num)))
+
+y <- (tmp %>% group_by(mydate) %>% summarise(num = sum(num)))
+
+tmp <- merge(x,y, by = 'mydate')
+
+tmp$rate <- tmp$num.x/tmp$num.y
+
+for(ii in 1:nrow(tmp)){
+  tmp$mydate[ii] <- paste(tmp$mydate[ii],'-01',sep = '')
+}
+
+tmp$mydate <- as.Date(tmp$mydate,'%Y-%m-%d')
+ggplot(data = tmp, aes(x = mydate, y = rate, color = role)) + geom_line() 
+# after 2017 07 much stabler.
+```
+
+
+
+```{r}
+#summerise rates
+summary(tmp[tmp$role == 'Engineer','rate'])
+summary(tmp[tmp$role == 'Driver','rate'])
+```
+
+
+```{r}
+## Split to Drivers and Engineers
+# check time to fill and salary distribution
+data_engineer <- data_full[data_full$role =='Engineer',]
+data_driver <- data_full[data_full$role == 'Driver',]
+```
+
+```{r}
+summary(data_engineer$time_to_fill)
+summary(data_engineer$salary)
+summary(data_driver$time_to_fill)
+summary(data_driver$salary)
+```
+
+```{r}
+ggboxplot(rbind(data_engineer,data_driver), x = "role", y = "time_to_fill", fill = 'role', palette = 'magma') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7)) 
+# although mean close, engineers seems to take longer to fill
+```
+
+```{r}
+ggboxplot(rbind(data_engineer,data_driver), x = "role", y = "salary", fill = 'role',
+          palette = 'magma') + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1,size = 7)) 
+# engineers salary higher on average
+```
+
+```{r}
+# kept only 80% inner quantile of all salaries
+eng.tiles <- ntile(data_engineer$salary,10)
+data_engineer <- data_engineer[eng.tiles>=2 & eng.tiles <=9,] #much more normal
+```
+
+```{r}
+dri.tiles <- ntile(data_driver$salary,10)
+data_driver <- data_driver[dri.tiles>=2 & dri.tiles <=9,] #much more normal
+```
+
+
+```{r}
+## look at time_to_fill, keep inner 80%. 
+sort(table(data_engineer$time_to_fill),decreasing = T) 
+eng.time.tiles <- ntile(data_engineer$time_to_fill,10)
+data_engineer$time_to_fill[eng.time.tiles>=2 & eng.time.tiles <=9] %>% summary() 
+# 4 -115
+
+
+```
+
+```{r}
+data_engineer <- data_engineer[eng.time.tiles>=2 & eng.time.tiles <=9,] # 26148 rows
+sort(table(data_driver$time_to_fill),decreasing = T) 
+dri.time.tiles <- ntile(data_driver$time_to_fill,10)
+data_driver$time_to_fill[dri.time.tiles>=2 & dri.time.tiles <=9] %>% summary() # 3 -94
+data_driver <- data_driver[dri.time.tiles>=2 & dri.time.tiles <=9,] # 21130 row
+# distribution of median salary and time fill over time
+```
+
+```{r}
+tmp <- data_full %>% mutate('mydate' = format(as.Date(post_date),'%Y-%m')) %>% 
+  select(mydate,role,salary) %>% filter(role %in% c('Engineer','Driver')) %>% 
+  group_by(mydate,role) %>% summarise(med_salary = median(salary,na.rm = T))
+for(ii in 1:nrow(tmp)){
+  tmp$mydate[ii] <- paste(tmp$mydate[ii],'-01',sep = '')
+}
+tmp$mydate <- as.Date(tmp$mydate,'%Y-%m-%d')
+ggplot(data = tmp, aes(x = mydate, y = med_salary, color = role)) + geom_line()
+```
+
+
+```{r}
+tmp_2 <- tmp
+tmp_2$med_salary[tmp_2$role == 'Driver'] <-tmp_2$med_salary[tmp_2$role == 'Driver'] + 
+  (median(data_engineer$salary,na.rm = T)-median(data_driver$salary,na.rm = T))
+ggplot(data = tmp_2, aes(x = mydate, y = med_salary, color = role)) + geom_line()
+```
+
+
+## write the csvs 
+# write_csv(data_full,'/nfs/home/lcu1428/z/400_proj/data_full.csv')
+# write_csv(data_engineer,'/nfs/home/lcu1428/z/400_proj/data_engineer.csv')
+# write_csv(data_driver,'/nfs/home/lcu1428/z/400_proj/data_driver.csv')
+
+
+
+
+
+
+
+
+```{r}
+# libraries
+library(readr)
+library(tidyverse)
+library(ggplot2)
+
+# read data
+# A random sample of 200,000 job postings were selected from the vertical
+
+data_full <- read_csv('Manu_data_200000.csv')
+
+# Remove duplicate columns
+data_full<-data_full[,-c(1,17,19)]
+```
+
+# Just look at Denver Drivers as an example to simplify
+# Why?  Noise in the job market - many types of jobs, many differing regions
+
+```{r}
+# 412 jobs
+denver.driver <- filter(data_full, role %in% c("Truck Driver", "Driver", "CDL Driver"), region_state=="Denver-Aurora, CO MSA")
+# Remove jobs only posted for 0 or 1 day
+# 387 jobs, NA removed by default
+denver.driver <- filter(denver.driver, time_to_fill > 1)
+# Push the job id to the end
+denver.driver$job_id_end <- denver.driver$job_id
+denver.driver <- denver.driver[-c(1)]
+denver.driver$region <- ifelse(denver.driver$city == "Denver", "Denver", ifelse(denver.driver$city == "Aurora", "Aurora", "Other"))
+denver.driver$region <- as.factor(denver.driver$region)
+denver.driver$region <- relevel(denver.driver$region, "Other")
+```
+
+```{r}
+ggplot(data = denver.driver, mapping = aes(x=salary, y=time_to_fill)) +
+  geom_point(mapping = aes(color = region)) +
+  geom_smooth(mapping = aes(x = salary, y=time_to_fill, color=region), se=FALSE)
+```
+
+```{r}
+# Try to predict time to fill based on salary, region = ("Other", "Denver", "Aurora")
+den.driver.model <- lm(time_to_fill ~ salary + region, data=denver.driver)
+summary(den.driver.model)
+```
+
+```{r}
+# Remove extra high salaries (Many jobs have "accounting" in tags)
+# 373 jobs, NA removed by default
+denver.driver <- filter(denver.driver, salary < 100000)
+```
+
+```{r}
+ggplot(data = denver.driver, mapping = aes(x=salary, y=time_to_fill)) +
+  geom_point(mapping = aes(color = region)) +
+  geom_smooth(mapping = aes(x = salary, y=time_to_fill, color=region), se=FALSE)
+```
+
+```{r}
+# Try to predict time to fill based on salary, region = ("Other", "Denver", "Aurora")
+den.driver.model <- lm(time_to_fill ~ salary + region, data=denver.driver)
+summary(den.driver.model)
+# Inside / Outside Denver or Aurora or suberbs does not matter
+```
+
+# There was barely a relationship between "time_to_fill" and "salary" or "region = Denver, Aurora, Other" and when outliers removed, things are even worse. 
+
+# Add indicator tags to determine if there are any relationships with the top driving tags:
+# "Safety", "High School Diploma", "Training", "Transportation", "Customer Service", "Commercial", "Warehouse"
+
+```{r}
+denver.driver$safety <- as.numeric(str_detect(denver.driver$tags, "Safety"))
+denver.driver$diploma <- as.numeric(str_detect(denver.driver$tags, "High School Diploma"))
+denver.driver$training <- as.numeric(str_detect(denver.driver$tags, "Training"))
+denver.driver$transportation <- as.numeric(str_detect(denver.driver$tags, "Transportation"))
+denver.driver$cust.serv <- as.numeric(str_detect(denver.driver$tags, "Customer Service"))
+denver.driver$commercial <- as.numeric(str_detect(denver.driver$tags, "Commercial"))
+denver.driver$warehouse <- as.numeric(str_detect(denver.driver$tags, "Warehouse"))
+```
+
+```{r}
+denver.driver$post_date<-as.Date(denver.driver$post_date,"%m/%d/%Y")
+denver.driver$fill_date<-as.Date(denver.driver$fill_date,"%m/%d/%Y")
+```
+
+```{r}
+# Average time to fill driving jobs in Denver
+# Month 1 = August 2017
+# Month 12 = July 2018
+library(lubridate)
+```
+
+```{r}
+# Driver job postings by week in Denver
+denver.driver %>%
+  count(week = floor_date(post_date, "week")) %>%
+  ggplot(aes(week, n)) + 
+  geom_line() +
+  labs(title = "Denver Driving Jobs (August 2017-July 2017), Job Posts Per Week")
+```
+
+```{r}
+denver.driver$quarter1 <- ifelse(month(denver.driver$post_date) %in% c(1, 2, 3), 1, 0) 
+denver.driver$quarter2 <- ifelse(month(denver.driver$post_date) %in% c(4, 5, 6), 1, 0)
+denver.driver$quarter3 <- ifelse(month(denver.driver$post_date) %in% c(7, 8, 9), 1, 0) 
+denver.driver$quarter4 <- ifelse(month(denver.driver$post_date) %in% c(10, 11, 12), 1, 0)
+```
+
+```{r}
+denver.driver$salary.bucket <- ifelse(denver.driver$salary < 30000, "Low", ifelse(denver.driver$salary < 50000, "Medium", "High"))
+```
+
+```{r}
+library(MASS)
+full.den.driver.model <- lm(log(time_to_fill) ~ log(salary) + region + safety + diploma + transportation + cust.serv + training + commercial + warehouse + quarter1 + quarter2 + quarter3 + salary.bucket, data=denver.driver)
+summary(full.den.driver.model)
+```
+
+```{r}
+step.denver.driver.model <- stepAIC(full.den.driver.model, direction="both", trace=FALSE)
+summary(step.denver.driver.model)
+```
+
+```{r}
+plot(step.denver.driver.model)
+```
+
+```{r}
+ggplot(data = denver.driver, mapping = aes(x=log(salary), y=log(time_to_fill))) +
+  geom_point(mapping = aes(color = region)) +
+  geom_smooth(mapping = aes(x = log(salary), y=log(time_to_fill), color=region), se=FALSE) +
+  labs(title = "Denver Driving Jobs (August 2017-July 2017)")
+```
+
+```{r}
+denver.driver$quarter <- ifelse(denver.driver$quarter1 == 1, 1, ifelse(denver.driver$quarter2 == 1, 2, ifelse(denver.driver$quarter3 == 1, 3, 4)))
+denver.driver$quarter <- factor(denver.driver$quarter, levels=c(3,4,1,2))
+```
+
+```{r}
+ggplot(data = denver.driver, mapping = aes(x = as.factor(quarter), y = log(time_to_fill))) + 
+         geom_boxplot() +
+  labs(title = "Denver Driving Jobs Took Longer to Fill in 3rd, 4th Quarter 2017", x="3rd / 4th Quarter 2017                                                1st / 2nd Quarter 2018" )
+```
+
+
+```{r}
+g1 <- ggplot(data = denver.driver, mapping = aes(x = region, y = log(time_to_fill))) + 
+         geom_violin(trim=FALSE) +
+  labs(title = "No Significant Difference Between Denver / Aurora / Suburbs", x="Greater Denver Area Driver Jobs")
+g1 + geom_dotplot(binaxis="y", stackdir='center', dotsize=1)
+```
+
+```{r}
+ggplot(data = denver.driver, mapping = aes(x = as.factor(transportation), y = log(time_to_fill))) + 
+         geom_dotplot(binaxis='y', stackdir='center', stackratio=1.5, dotsize=0.5) +
+  labs(title = "Significant Difference Between Posts That Include Tag=(Transportation)", x="Transportation Jobs Fill Slower") + scale_x_discrete(labels=c("0" = "No Transportation", "1" = "Transportation"))
+```
+
+```{r}
+ggplot(data = denver.driver, mapping = aes(x = as.factor(warehouse), y = log(time_to_fill))) + 
+         geom_dotplot(binaxis='y', stackdir='center', stackratio=1.5, dotsize=0.5) +
+  labs(title = "Significant Difference Between Posts That Include Tag=(Warehouse)", x="Warehouse Jobs Fill Quicker") + scale_x_discrete(labels=c("0" = "No Warehouse", "1" = "Warehouse"))
+```
+
+```{r}
+denver.driver$salary.bucket <- factor(denver.driver$salary.bucket, levels=c("Low", "Medium", "High"))
+ggplot(data = denver.driver, mapping = aes(x = as.factor(salary.bucket), y = log(time_to_fill))) + 
+         geom_boxplot() +
+  labs(title = "Denver Driving Jobs, Time-To-Fill By Salary Category", x="Under $30k Low,   $30k-$50k Medium,   Over $50k High" )
+```
